@@ -96,10 +96,4 @@ pip install telebot gspread oauth2client python-dotenv
 - **Google Sheets API errors**: Verify that the credentials are correct and the bot has access to the Google Sheet.
 - **Missing library errors**: Ensure all dependencies are installed using `pip install telebot gspread oauth2client python-dotenv`.
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
-
----
-
-For any issues or enhancements, feel free to open an issue or pull request!
+for any question : alperensulejman45@gmail.com

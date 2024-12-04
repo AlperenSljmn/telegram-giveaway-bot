@@ -3,86 +3,104 @@ import random
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
-# Initialize your bot with the token from BotFather
-BOT_TOKEN = 'YOUR_TOKEN' #Don't forget the replace here with your token
+# Load environment variables
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Your bot token from .env
+YOUR_ADMIN_ID = int(os.getenv("YOUR_ADMIN_ID"))  # Admin ID from .env
+GOOGLE_CREDENTIALS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH")  # Path to Google credentials file from .env
+
+# Initialize your bot
 bot = telebot.TeleBot(BOT_TOKEN)
-YOUR_ADMIN_ID = 'YOUR_ADMIN_ID' #Don't forget the replace here with Admin Id
-# Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("file.json", scope) #Don't forget the replace here with path of your file
 
+# Google Sheets setup
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive"
+]
+creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_PATH, scope)  # Path from .env
 client = gspread.authorize(creds)
 
-# Access your Google Sheet
-sheet = client.open("GiveAway").sheet1
+# Access the Google Sheet
+sheet = client.open("denemem").sheet1
 
 # Dictionary to store ongoing giveaways
 giveaways = {}
 
-# Command to create a giveaway (admin-only)
+# Command: Create a giveaway (admin-only)
 @bot.message_handler(commands=['create_giveaway'])
 def create_giveaway(message):
-    # Check if user is admin
-    admin_id = message.from_user.id
-    if admin_id != YOUR_ADMIN_ID:
-        bot.reply_to(message, "You are not authorized to create giveaways.")
+    if message.from_user.id != YOUR_ADMIN_ID:
+        bot.reply_to(message, "❌ You are not authorized to create giveaways.")
         return
     
-    # Create a new giveaway entry
+    # Parse the command: /create_giveaway <title> <duration_in_minutes> <reward>
+    args = message.text.split(maxsplit=3)
+    if len(args) < 4:
+        bot.reply_to(message, "Usage: /create_giveaway <title> <duration_in_minutes> <reward>")
+        return
+
+    title = args[1]
+    duration = int(args[2])
+    reward = args[3]
+    end_time = datetime.now().timestamp() + duration * 60  # Convert minutes to seconds
+
     giveaways[message.chat.id] = {
-        "title": "Sample Giveaway",
-        "duration": 10, # Duration in minutes
+        "title": title,
+        "end_time": end_time,
+        "reward": reward,
         "participants": []
     }
-    bot.reply_to(message, "Giveaway created! Use /enter to participate.")
+    bot.reply_to(message, f"🎉 Giveaway '{title}' created! Reward: {reward}. Ends in {duration} minutes.\nUse /enter to participate.")
 
-# Command to join a giveaway
+# Command: Join a giveaway
 @bot.message_handler(commands=['enter'])
 def enter_giveaway(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
-    
-    # Check if a giveaway exists
-    if chat_id not in giveaways:
-        bot.reply_to(message, "No active giveaway.")
-        return
-    
-    # Register the participant
-    if user_id not in giveaways[chat_id]["participants"]:
-        giveaways[chat_id]["participants"].append((user_id, username))
-        bot.reply_to(message, f"{username}, you are now entered in the giveaway!")
-    else:
-        bot.reply_to(message, "You have already entered the giveaway.")
 
-# Command to randomly choose a winner
+    if chat_id not in giveaways:
+        bot.reply_to(message, "❌ No active giveaway in this chat.")
+        return
+
+    if user_id not in [p[0] for p in giveaways[chat_id]["participants"]]:
+        giveaways[chat_id]["participants"].append((user_id, username))
+        bot.reply_to(message, f"✅ {username}, you have successfully entered the giveaway!")
+    else:
+        bot.reply_to(message, "⚠️ You are already registered in this giveaway.")
+
+# Command: Pick a winner
 @bot.message_handler(commands=['pick_winner'])
 def pick_winner(message):
-    chat_id = message.chat.id
-    
-    # Check if giveaway exists and if there are participants
-    if chat_id not in giveaways or not giveaways[chat_id]["participants"]:
-        bot.reply_to(message, "No active giveaway or no participants.")
+    if message.from_user.id != YOUR_ADMIN_ID:
+        bot.reply_to(message, "❌ You are not authorized to pick winners.")
         return
 
-    # Select a random winner
+    chat_id = message.chat.id
+
+    if chat_id not in giveaways or not giveaways[chat_id]["participants"]:
+        bot.reply_to(message, "❌ No active giveaway or no participants in this chat.")
+        return
+
     winner = random.choice(giveaways[chat_id]["participants"])
-    bot.send_message(chat_id, f"🎉 Congratulations {winner[1]}! You won the giveaway!")
+    bot.send_message(chat_id, f"🎉 Congratulations {winner[1]}! You won the giveaway! Reward: {giveaways[chat_id]['reward']}")
+    del giveaways[chat_id]  # Remove the giveaway after picking the winner
 
-    # Reset giveaway after winner is chosen
-    del giveaways[chat_id]
-
-# Command to send promotional message
+# Command: Send promotional messages
 @bot.message_handler(commands=['send_promo'])
 def send_promo(message):
-    # Check if user is admin
     if message.from_user.id != YOUR_ADMIN_ID:
-        bot.reply_to(message, "You are not authorized to send promotional messages.")
+        bot.reply_to(message, "❌ You are not authorized to send promotional messages.")
         return
-    
-    promo_message = "Check out our latest updates!"
-    user_ids = sheet.col_values(1)  # Assuming the user IDs are stored in the first column
+
+    promo_message = "📢 Don't miss our latest updates and offers!"
+    user_ids = sheet.col_values(1)  # Assuming user IDs are stored in the first column
     successful, failed = 0, 0
 
     for user_id in user_ids:
@@ -91,28 +109,41 @@ def send_promo(message):
             successful += 1
         except Exception:
             failed += 1
-    
-    # Log results in a new sub-sheet
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_sheet = client.open("GiveawayBot").add_worksheet(title=f"Promo_Log_{now}", rows="100", cols="3")
+
+    # Log the results in Google Sheets
+    log_sheet = client.open("GiveAway").add_worksheet(title=f"Promo_Log_{datetime.now().strftime('%Y%m%d_%H%M%S')}", rows="100", cols="3")
     log_sheet.append_row(["Timestamp", "Successful", "Failed"])
-    log_sheet.append_row([now, successful, failed])
+    log_sheet.append_row([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), successful, failed])
 
-    bot.reply_to(message, f"Promotional message sent. Success: {successful}, Failed: {failed}.")
+    bot.reply_to(message, f"✅ Promotional message sent successfully.\nSuccess: {successful}, Failed: {failed}.")
 
-# Command to register users on start
+# Command: Register user on /start
 @bot.message_handler(commands=['start'])
 def start_bot(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     username = message.from_user.username or message.from_user.first_name
 
-    # Log user in Google Sheets if they haven't started before
+    # Log user in Google Sheets if they aren't already registered
     existing_users = sheet.col_values(1)
-    if str(user_id) not in existing_users:
+    if user_id not in existing_users:
         sheet.append_row([user_id, username])
-        bot.reply_to(message, "Welcome! You've been added to the list.")
+        bot.reply_to(message, "✅ Welcome! You have been registered.")
     else:
-        bot.reply_to(message, "You're already registered!")
+        bot.reply_to(message, "⚠️ You are already registered.")
+
+# Command: List active giveaways
+@bot.message_handler(commands=['list_giveaways'])
+def list_giveaways(message):
+    active_giveaways = []
+    for chat_id, giveaway in giveaways.items():
+        time_left = (giveaway["end_time"] - datetime.now().timestamp()) / 60
+        if time_left > 0:
+            active_giveaways.append(f"🎁 {giveaway['title']} - Reward: {giveaway['reward']} (Ends in {int(time_left)} minutes)")
+
+    if active_giveaways:
+        bot.reply_to(message, "\n".join(active_giveaways))
+    else:
+        bot.reply_to(message, "⚠️ No active giveaways right now.")
 
 # Polling to keep the bot running
 bot.polling(none_stop=True)

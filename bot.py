@@ -27,7 +27,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_PATH
 client = gspread.authorize(creds)
 
 # Access the Google Sheet
-sheet = client.open("denemem").sheet1
+sheet = client.open("GiveAway").sheet1
 
 # Dictionary to store ongoing giveaways
 giveaways = {}
